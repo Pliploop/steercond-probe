@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AUDIO, GREEN, MODELS, NA_MODES, NOT_MENTIONED, RED, WHITE, cell, deq, getFile, getJev, getJson, kindOf, mix, search, trimLoop } from './lib.js'
+import { AUDIO, GREEN, MODELS, NA_MODES, SHORT, NOT_MENTIONED, RED, WHITE, cell, deq, getFile, getJev, getJson, kindOf, mix, search, trimLoop } from './lib.js'
 
 const START_INSTR = 'instrumentation'
 // The audio Space only allows cross-origin reads from the project site; elsewhere play without the live waveform.
@@ -119,7 +119,7 @@ export default function App() {
   const [pin, setPin] = useState(null)
   const [tab, setTab] = useState('rank')
   const [F, setF] = useState(null)  // { f0, f1, gens, llm } for (model, instr)
-  const [drawer, setDrawer] = useState(false)
+  const [side, setSide] = useState(() => typeof window === 'undefined' || window.innerWidth > 900)
   const audio = useAudio()
 
   useEffect(() => {
@@ -144,6 +144,16 @@ export default function App() {
   }, [D, model, instr])
 
   const M = D?.M, C = D?.C, N = M?.n, K = M?.k, DIM = M?.dim
+  useEffect(() => {
+    if (!M) return
+    const order = M.instructions.map(x => x[0]).filter(x => x !== 'none')
+    const onKey = e => {
+      if (e.target.closest?.('input, textarea, select') || (e.key !== '[' && e.key !== ']')) return
+      setInstr(cur => order[(order.indexOf(cur) + (e.key === ']' ? 1 : -1) + order.length) % order.length])
+    }
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  }, [M])
   const ready = D && F && F.key === `${model}/${instr}`
 
   /* N/A */
@@ -168,12 +178,10 @@ export default function App() {
   const naCount = useMemo(() => { if (!ready || na === 'off') return 0; let c = 0; for (let i = 0; i < N; i++) c += isNA(i); return c }, [ready, na, thr, F])
   const avail = D ? { jev: !!D.JEV, anchor: Object.values(M.files).some(f => f.app), none: !!(M.gens.inbedder7b_na || []).length, llm: !!M.llm.length } : {}
 
-  if (err) return <div className="wrap"><Header status={`Could not load data: ${err}`} /></div>
-  if (!D) return <div className="wrap"><Header status="Loading data…" /><div className="card skeleton" /></div>
+  if (err) return <div className="boot"><p>Could not load data: {err}</p></div>
+  if (!D) return <div className="boot"><span className="spin dark" /><p>Loading the probe…</p></div>
 
   const I = M.instructions.find(x => x[0] === instr)
-  const order = M.instructions.map(x => x[0]).filter(x => x !== 'none')
-  const step = d => setInstr(order[(order.indexOf(instr) + d + order.length) % order.length])
   const info = key => M.files[`${model}/${key}`]
   const sim = (f, a, b) => cell(f, DIM, a, b)
 
@@ -181,70 +189,53 @@ export default function App() {
     if (!ready) return null
     const p = jevP(i), a = appSim(i), g = model.startsWith('inbedder') ? F.gens[model] : null
     return (
-      <>
-        {isNA(i) && <span className="tagna">Not applicable</span>}
-        <div className="facts">
-          {g && <div>InBedder answer · <b>{trimLoop(g[i])}</b></div>}
-          {F.llm && <div>LLM answer · <b>{F.llm[i]}</b></div>}
-          {(p !== null || a !== null) && <div>{p !== null && <>JEV P(answerable) <b className="num">{p.toFixed(2)}</b></>}{p !== null && a !== null && ' · '}{a !== null && <>null-caption sim <b className="num">{a.toFixed(2)}</b></>}</div>}
-        </div>
-      </>
+      <dl className="facts">
+        {isNA(i) && <div className="na-line">Not applicable to this instruction</div>}
+        {g && <div><dt>InBedder</dt><dd>{trimLoop(g[i])}</dd></div>}
+        {F.llm && <div><dt>LLM</dt><dd>{F.llm[i]}</dd></div>}
+        {p !== null && <div><dt>P(answerable)</dt><dd className="num">{p.toFixed(2)}</dd></div>}
+        {a !== null && <div><dt>Null-caption sim</dt><dd className="num">{a.toFixed(2)}</dd></div>}
+      </dl>
     )
   }
 
   return (
-    <div className="wrap">
-      <Header status={ready ? `${N.toLocaleString()} Music4All captions · ${M.instructions.length - 1} instructions · ${M.models.length} teachers` : `Loading ${MODELS[model]?.[0] || model}…`} />
+    <div className={`app ${side ? 'open' : 'closed'}`}>
+      <Sidebar {...{ M, model, setModel, instr, setInstr, na, setNa, avail, naCount, thr, setThr, fi: info(instr), hasApp: !!F?.f1?.app && ready, close: () => setSide(false) }} />
+      <div className="scrim" onClick={() => setSide(false)} />
+      <main className="main">
+        <div className="topbar">
+          <button className="icon" aria-label={side ? 'Hide controls' : 'Show controls'} aria-expanded={side} onClick={() => setSide(!side)}>
+            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="2" y="3" width="14" height="12" rx="3" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M7 3v12" stroke="currentColor" strokeWidth="1.5" /></svg>
+          </button>
+          <span className="crumb">{MODELS[model]?.[0] || model}</span>
+          <span className="crumb muted">{ready ? `${N.toLocaleString()} captions` : 'Loading…'}</span>
+        </div>
 
-      <section className="card controls" aria-label="Controls">
-        <div className="ctl"><span className="label">Embedder</span>
-          <div className="pills">
-            {M.models.map(k => (
-              <button key={k} className="pill" aria-pressed={k === model} onClick={() => setModel(k)}>
-                <b>{MODELS[k]?.[0] || k}</b><small>{MODELS[k]?.[1]}</small>
-              </button>
-            ))}
+        <section className="headline" aria-live="polite">
+          <p className="eyebrow">{kindOf(I[3])} · {I[2]}</p>
+          <h1>{I[1]}</h1>
+        </section>
+
+        <section className="stage" aria-label="Similarity matrix">
+          <div className="stage-head">
+            <Seg label="Matrix view" value={view} onChange={setView} options={[['before', 'Plain'], ['after', 'Instructed'], ['delta', 'Change']]} />
+            {ready && <Legend view={view} fi={info(view === 'before' ? 'none' : instr)} />}
           </div>
-        </div>
-        <div className="ctl"><label className="label" htmlFor="instr">Modulating instruction</label>
-          <div className="stepper">
-            <button className="iconbtn" aria-label="Previous instruction" onClick={() => step(-1)}>‹</button>
-            <select id="instr" value={instr} onChange={e => setInstr(e.target.value)}>
-              {Object.entries(M.instructions.filter(x => x[0] !== 'none').reduce((g, x) => ((g[kindOf(x[3])] ||= []).push(x), g), {})).map(([g, xs]) => (
-                <optgroup key={g} label={g}>{xs.map(([iid, s]) => <option key={iid} value={iid}>{s}</option>)}</optgroup>
-              ))}
-            </select>
-            <button className="iconbtn" aria-label="Next instruction" onClick={() => step(1)}>›</button>
+          <div className="scroller">
+            <div className="board">
+              <Slots {...{ C, slots, setSlots, act: pin || hover, audio, setPin }} />
+              {ready ? <Grid {...{ slots, view, F, sim, isNA, info, instr, pin, setPin, setHover, act: pin || hover }} /> : <div className="grid-wait"><span className="spin dark" /></div>}
+            </div>
           </div>
-        </div>
-        <NaDrawer {...{ open: drawer, setOpen: setDrawer, na, setNa, avail, naCount, thr, setThr, fi: info(instr), hasApp: !!F?.f1?.app && ready }} />
-      </section>
-
-      <section className="headline" aria-live="polite">
-        <span className="label">Instruction</span>
-        <h2>{I[1]}</h2>
-        <p className="q"><span className="kind">{kindOf(I[3])}</span>{I[2]}</p>
-      </section>
-
-      <section className="card stage" aria-label="Similarity matrix">
-        <div className="stage-head">
-          <Seg label="Matrix view" value={view} onChange={setView} options={[['before', 'No instruction'], ['after', 'With instruction'], ['delta', 'Change']]} />
-          {ready && <Legend view={view} fi={info(view === 'before' ? 'none' : instr)} N={N} />}
-        </div>
-        <div className="scroller">
-          <div className="board">
-            <Slots {...{ C, slots, setSlots, act: pin || hover, audio, setPin }} />
-            {ready ? <Grid {...{ slots, view, F, sim, isNA, info, instr, pin, setPin, setHover }} /> : <div className="grid-wait">Loading…</div>}
+          <div className="slot-actions">
+            <button className="text" onClick={() => setSlots([...slots, Math.floor(Math.random() * N)])}>Add caption</button>
+            <button className="text" onClick={() => { setSlots(slots.map(() => Math.floor(Math.random() * N))); setPin(null) }}>Shuffle</button>
           </div>
-        </div>
-        <div className="slot-actions">
-          <button className="ghost" onClick={() => setSlots([...slots, Math.floor(Math.random() * N)])}>+ Add caption</button>
-          <button className="ghost" onClick={() => { setSlots(slots.map(() => Math.floor(Math.random() * N))); setPin(null) }}>Shuffle all</button>
-          <span className="hint">Click a caption to search · ▶ streams the 30 s clip · hover a cell to read both, click to pin</span>
-        </div>
-      </section>
+        </section>
 
-      {ready && <Lists {...{ C, M, K, N, F, slots, pin, instr, I, tab, setTab, topView, setTopView, sim, info, facts, audio }} />}
+        {ready && <Lists {...{ C, M, K, N, F, slots, pin, instr, I, tab, setTab, topView, setTopView, sim, info, facts, audio }} />}
+      </main>
 
       {ready && <Panels {...{ C, slots, act: pin || hover, pinned: !!pin, unpin: () => setPin(null), F, sim, instr, facts, audio }} />}
       {audio.idx !== null && <NowPlaying {...{ audio, C }} />}
@@ -252,70 +243,74 @@ export default function App() {
   )
 }
 
-function Header({ status }) {
+function Legend({ view, fi }) {
+  if (!fi) return null
+  const delta = view === 'delta', m = delta ? Math.max(Math.abs(fi.dlo), Math.abs(fi.dhi)) : 0
   return (
-    <header className="top">
-      <span className="mark" aria-hidden="true" />
-      <div><h1>Conditional Similarity Probe</h1><p id="status">{status}</p></div>
-    </header>
+    <div className="legend" title={delta ? 'Change in cosine from adding the instruction' : 'Cosine, min to max over the whole dataset'}>
+      <span className="num">{delta ? `−${m.toFixed(2)}` : fi.lo.toFixed(2)}</span>
+      <i style={{ background: delta ? `linear-gradient(90deg,rgb(${RED}),#fff,rgb(${GREEN}))` : `linear-gradient(90deg,#fff,rgb(${RED}))` }} />
+      <span className="num">{delta ? `+${m.toFixed(2)}` : fi.hi.toFixed(2)}</span>
+    </div>
   )
 }
 
-function Legend({ view, fi, N }) {
-  if (!fi) return null
-  if (view === 'delta') {
-    const m = Math.max(Math.abs(fi.dlo), Math.abs(fi.dhi))
-    return <div className="legend"><span className="num">−{m.toFixed(2)}</span><i style={{ background: `linear-gradient(90deg,rgb(${RED}),#fff,rgb(${GREEN}))` }} /><span className="num">+{m.toFixed(2)}</span><span>change from adding the instruction</span></div>
-  }
-  return <div className="legend"><span className="num">{fi.lo.toFixed(2)}</span><i style={{ background: `linear-gradient(90deg,#fff,rgb(${RED}))` }} /><span className="num">{fi.hi.toFixed(2)}</span><span>cosine, min–max over all {N.toLocaleString()} captions</span></div>
-}
-
-function NaDrawer({ open, setOpen, na, setNa, avail, naCount, thr, setThr, fi, hasApp }) {
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!open) return
-    const close = e => { if (!ref.current?.contains(e.target)) setOpen(false) }
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [open])
+function Sidebar({ M, model, setModel, instr, setInstr, na, setNa, avail, naCount, thr, setThr, fi, hasApp, close }) {
+  const groups = M.instructions.filter(x => x[0] !== 'none').reduce((g, x) => ((g[kindOf(x[3])] ||= []).push(x), g), {})
   const fmt = x => (x == null ? '–' : x.toFixed(2))
   return (
-    <div className="drawer" ref={ref}>
-      <button className={`drawer-btn ${open ? 'open' : ''}`} aria-expanded={open} onClick={() => setOpen(!open)}>
-        Not applicable <span className={`badge ${na !== 'off' ? 'on' : ''}`}>{na === 'off' ? 'Off' : `${naCount.toLocaleString()} N/A`}</span>
-      </button>
-      {open && (
-        <div className="drawer-body">
-          <div className="ctl"><span className="label">Mark captions that cannot answer the instruction</span>
-            <div className="radios">
-              {NA_MODES.map(([v, t, s]) => {
-                const off = v !== 'off' && !avail[v]
-                return (
-                  <label key={v} className={`radio ${off ? 'off' : ''}`}>
-                    <input type="radio" name="na" value={v} checked={na === v} disabled={off} onChange={() => setNa(v)} />
-                    <span><b>{t}</b><small>{off ? 'Not computed for this data' : s}</small></span>
-                  </label>
-                )
-              })}
-            </div>
+    <aside className="side" aria-label="Controls">
+      <div className="brand">
+        <span className="mark" aria-hidden="true" />
+        <span>Similarity probe</span>
+        <button className="icon only-mobile" aria-label="Close controls" onClick={close}>✕</button>
+      </div>
+
+      <div className="sec">
+        <h3>Teacher</h3>
+        {M.models.map(k => (
+          <button key={k} className="row" aria-pressed={k === model} onClick={() => setModel(k)}>
+            <span>{MODELS[k]?.[0] || k}</span><small>{MODELS[k]?.[1]}</small>
+          </button>
+        ))}
+      </div>
+
+      <div className="sec">
+        <h3>Instruction <kbd>[</kbd><kbd>]</kbd></h3>
+        {Object.entries(groups).map(([g, xs]) => (
+          <div key={g} className="group">
+            <h4>{g}</h4>
+            {xs.map(([iid, s]) => (
+              <button key={iid} className="row" aria-pressed={iid === instr} title={s} onClick={() => setInstr(iid)}><span>{SHORT[iid] || s}</span></button>
+            ))}
           </div>
-          {na === 'anchor' && hasApp && thr !== null && (
-            <div className="slider"><span className="label">Confidence threshold</span>
-              <input type="range" min={fi.anchor_lo} max={fi.anchor_hi} step="0.001" value={thr} onChange={e => setThr(+e.target.value)} />
-              <span className="meta">similarity ≥ {thr.toFixed(3)} counts as N/A · default matches JEV's N/A rate</span>
-            </div>
-          )}
-          <div className="ctl"><span className="label">N/A detection, this embedder and instruction</span>
-            <div className="stats">
-              <div className="stat"><b>{na === 'off' ? '–' : naCount.toLocaleString()}</b><span>captions marked N/A</span></div>
-              <div className="stat"><b>{fmt(fi?.auroc_anchor_vs_jev)}</b><span>confidence vs JEV, AUROC</span></div>
-              <div className="stat"><b>{fmt(fi?.auroc_anchor_vs_llm)}</b><span>confidence vs LLM, AUROC</span></div>
-              <div className="stat"><b>{fmt(fi?.auroc_jev_vs_llm)}</b><span>JEV vs LLM, AUROC</span></div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+        ))}
+      </div>
+
+      <div className="sec">
+        <h3>Not applicable {na !== 'off' && <em>{naCount.toLocaleString()}</em>}</h3>
+        {NA_MODES.map(([v, t, s]) => {
+          const off = v !== 'off' && !avail[v]
+          return (
+            <button key={v} className="row" aria-pressed={na === v} disabled={off} title={off ? 'Not computed for this data' : s} onClick={() => setNa(v)}>
+              <span>{t}</span>
+            </button>
+          )
+        })}
+        {na === 'anchor' && hasApp && thr !== null && (
+          <label className="slider">
+            <span>Threshold <b className="num">{thr.toFixed(3)}</b></span>
+            <input type="range" min={fi.anchor_lo} max={fi.anchor_hi} step="0.001" value={thr} onChange={e => setThr(+e.target.value)} />
+          </label>
+        )}
+        <dl className="mini">
+          <div><dt>Confidence vs JEV</dt><dd className="num">{fmt(fi?.auroc_anchor_vs_jev)}</dd></div>
+          <div><dt>Confidence vs LLM</dt><dd className="num">{fmt(fi?.auroc_anchor_vs_llm)}</dd></div>
+          <div><dt>JEV vs LLM</dt><dd className="num">{fmt(fi?.auroc_jev_vs_llm)}</dd></div>
+        </dl>
+        <p className="foot">AUROC of N/A detection for this teacher and instruction.</p>
+      </div>
+    </aside>
   )
 }
 
@@ -333,7 +328,7 @@ function Slot({ C, idx, r, n, act, audio, set, remove }) {
   const [sel, setSel] = useState(0)
   const hits = useMemo(() => (q ? search(C, q) : []), [q])
   const choose = i => { set(i); setQ(null) }
-  const cls = act && act.r === r ? 'row' : act && act.c === r ? 'col' : ''
+  const cls = act && act.r === r ? 'row-on' : act && act.c === r ? 'col-on' : ''
   return (
     <div className={`slot ${cls}`}>
       <span className="n">{r + 1}</span>
@@ -366,7 +361,7 @@ function Slot({ C, idx, r, n, act, audio, set, remove }) {
   )
 }
 
-function Grid({ slots, view, F, sim, isNA, info, instr, pin, setPin, setHover }) {
+function Grid({ slots, view, F, sim, isNA, info, instr, pin, setPin, setHover, act }) {
   const n = slots.length, delta = view === 'delta'
   const fi = info(view === 'before' ? 'none' : instr)
   const value = (a, b) => (view === 'before' ? sim(F.f0, a, b) : view === 'after' ? sim(F.f1, a, b) : sim(F.f1, a, b) - sim(F.f0, a, b))
@@ -375,7 +370,7 @@ function Grid({ slots, view, F, sim, isNA, info, instr, pin, setPin, setHover })
     const t = Math.max(0, Math.min(1, (v - fi.lo) / (fi.hi - fi.lo))); return [mix(WHITE, RED, t), t]
   }
   const cells = []
-  for (let c = 0; c < n; c++) cells.push(<div key={`h${c}`} className="h">{c + 1}</div>)
+  for (let c = 0; c < n; c++) cells.push(<div key={`h${c}`} className={`h ${act && act.c === c ? 'on' : ''}`}>{c + 1}</div>)
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
     const key = `${r}-${c}`
     if (c > r) { cells.push(<div key={key} />); continue }
@@ -449,7 +444,7 @@ function Lists({ C, M, K, N, F, slots, pin, instr, I, tab, setTab, topView, setT
   const source = (
     <div className="source">
       <span className="chip">{r + 1}</span><Play {...{ audio, i: a, C }} />
-      <div><span className="label">Source caption{pin ? '' : ' · click a cell to choose its row'}</span><p>{C[a].caption}</p><Meta C={C} i={a} />{facts(a)}</div>
+      <div><span className="label">{pin ? `Row ${r + 1}` : `Row ${r + 1} · click a cell to change`}</span><p>{C[a].caption}</p><Meta C={C} i={a} />{facts(a)}</div>
     </div>
   )
   let body
@@ -460,8 +455,8 @@ function Lists({ C, M, K, N, F, slots, pin, instr, I, tab, setTab, topView, setT
     body = (
       <div className="panel">{source}
         <div className="two">
-          <div><div className="colhead"><b>No instruction</b><span>General caption similarity</span></div><ol>{o0.map((b, i) => item(i + 1, b, sim(F.f0, a, b), i0))}</ol></div>
-          <div><div className="colhead"><b>With instruction</b><span>{I[1]}</span></div><ol>{o1.map((b, i) => item(i + 1, b, sim(F.f1, a, b), i1, chg(sim(F.f1, a, b) - sim(F.f0, a, b), p0.get(b), i + 1)))}</ol></div>
+          <div><div className="colhead"><b>Plain</b><span>no instruction</span></div><ol>{o0.map((b, i) => item(i + 1, b, sim(F.f0, a, b), i0))}</ol></div>
+          <div><div className="colhead"><b>Instructed</b><span>{SHORT[instr] || I[1]}</span></div><ol>{o1.map((b, i) => item(i + 1, b, sim(F.f1, a, b), i1, chg(sim(F.f1, a, b) - sim(F.f0, a, b), p0.get(b), i + 1)))}</ol></div>
         </div>
       </div>
     )
@@ -481,17 +476,16 @@ function Lists({ C, M, K, N, F, slots, pin, instr, I, tab, setTab, topView, setT
     body = (
       <div className="panel">
         <div className="row-between">
-          <Seg label="Top 10 view" value={topView} onChange={setTopView} options={[['before', 'No instruction'], ['after', 'With instruction']]} />
-          <span className="hint">{topView === 'after' ? 'Exact neighbours with the instruction; change and old rank against no instruction' : 'Exact neighbours without an instruction'}</span>
+          <Seg label="Top 10 view" value={topView} onChange={setTopView} options={[['before', 'Plain'], ['after', 'Instructed']]} />
         </div>
         {source}<ol>{list}</ol>
       </div>
     )
   } else body = <div className="panel"><About M={M} N={N} /></div>
   return (
-    <section className="card lists">
+    <section className="lists">
       <div className="tabs" role="tablist">
-        {[['rank', 'Ranking of these captions'], ['top', 'Top 10 in the dataset'], ['about', 'About the data']].map(([t, l]) => (
+        {[['rank', 'Ranking'], ['top', 'Nearest in dataset'], ['about', 'About']].map(([t, l]) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>{l}</button>
         ))}
       </div>

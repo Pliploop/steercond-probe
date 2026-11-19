@@ -87,3 +87,14 @@ export function search(C, q) {
 
 export const WHITE = [255, 255, 255], RED = [196, 36, 48], GREEN = [16, 128, 78]
 export const mix = (a, b, t) => a.map((x, k) => Math.round(x + (b[k] - x) * t))
+
+// Sidebar labels; the full instruction stays in the headline and the tooltip
+export const SHORT = {
+  genre: 'Genre', style_para: 'Style', instrumentation: 'Instrumentation', instr_para: 'Instruments used', mood: 'Mood',
+  energy: 'Tempo and energy', vocal_style: 'Vocal delivery', voice: "Singer's voice", rhythm: 'Rhythm and groove',
+  production: 'Production', era: 'Era', culture: 'Tradition', lead_instr: 'Lead instrument', drums: 'Drums', bass: 'Bass',
+  guitar_tone: 'Guitar tone', harmony: 'Harmony', use_case: 'Use case', intensity: 'Intensity', structure: 'Structure',
+  q_vocals: 'Instrumental or vocal?', q_guitar_solo: 'Guitar solo?', q_brass: 'Sax or brass?', q_acoustic: 'Acoustic or electronic?',
+  q_gender: "Singer's gender?", q_dance: 'Danceable?', q_synth: 'Synths?', q_piano: 'Piano or keys?', q_happy: 'Happy or sad?',
+  q_language: 'Vocal language?',
+}
