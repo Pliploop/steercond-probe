@@ -30,7 +30,6 @@ function useAudio() {
       const src = r.ctx.createMediaElementSource(r.audio)
       r.analyser = r.ctx.createAnalyser()
       r.analyser.fftSize = 2048
-      r.analyser.smoothingTimeConstant = 0.82
       src.connect(r.analyser).connect(r.ctx.destination)
     } catch { r.analyser = null }
   }
@@ -49,38 +48,35 @@ function useAudio() {
 }
 
 function Wave({ audio }) {
-  // Mirrored spectrum envelope over log-spaced bands; fast attack, slow release, eases to flat on pause
+  // Oscilloscope-style waveform: triggered on a rising zero crossing (no sideways jitter), low-passed into
+  // P points, and eased frame to frame; flattens smoothly on pause
   const cv = useRef(null), playing = useRef(audio.playing)
   playing.current = audio.playing
   useEffect(() => {
     const a = audio.analyser()
     if (!a) return
-    const ctx = cv.current.getContext('2d'), bins = new Uint8Array(a.frequencyBinCount), B = 40
-    const edges = Array.from({ length: B + 1 }, (_, k) => Math.round(2 * Math.pow(bins.length * 0.7 / 2, k / B)))
-    const env = new Float32Array(B)
+    const ctx = cv.current.getContext('2d'), buf = new Float32Array(a.fftSize), P = 72, pts = new Float32Array(P)
+    const span = a.fftSize / 2  // samples shown after the trigger
     let raf
     const draw = () => {
       raf = requestAnimationFrame(draw)
-      a.getByteFrequencyData(bins)
-      for (let b = 0; b < B; b++) {
+      a.getFloatTimeDomainData(buf)
+      let t0 = 0
+      for (let k = 1; k < a.fftSize - span; k++) if (buf[k - 1] < 0 && buf[k] >= 0) { t0 = k; break }
+      const seg = span / P
+      for (let p = 0; p < P; p++) {
         let m = 0
-        if (playing.current) { for (let k = edges[b]; k < Math.max(edges[b] + 1, edges[b + 1]); k++) m += bins[k]; m /= Math.max(1, edges[b + 1] - edges[b]) * 255 }
-        const target = Math.pow(m, 1.4)
-        env[b] += (target - env[b]) * (target > env[b] ? 0.3 : 0.08)
+        if (playing.current) { for (let k = 0; k < seg; k++) m += buf[t0 + Math.floor(p * seg) + k]; m /= seg }
+        pts[p] += (Math.max(-1, Math.min(1, m * 2.2)) - pts[p]) * 0.22
       }
-      const { width: w, height: h } = cv.current, mid = h / 2
+      const { width: w, height: h } = cv.current, mid = h / 2, x = p => (p / (P - 1)) * w, y = p => mid - pts[p] * (mid - 4)
       ctx.clearRect(0, 0, w, h)
-      const y = b => Math.max(1.5, ((env[Math.max(0, b - 1)] + 2 * env[b] + env[Math.min(B - 1, b + 1)]) / 4) * (mid - 2))
-      const x = b => (b / (B - 1)) * w
-      ctx.beginPath()
-      ctx.moveTo(0, mid - y(0))
-      for (let b = 1; b < B; b++) ctx.quadraticCurveTo(x(b - 1), mid - y(b - 1), (x(b - 1) + x(b)) / 2, mid - (y(b - 1) + y(b)) / 2)
-      ctx.lineTo(w, mid - y(B - 1)); ctx.lineTo(w, mid + y(B - 1))
-      for (let b = B - 1; b > 0; b--) ctx.quadraticCurveTo(x(b), mid + y(b), (x(b) + x(b - 1)) / 2, mid + (y(b) + y(b - 1)) / 2)
-      ctx.lineTo(0, mid + y(0)); ctx.closePath()
+      ctx.beginPath(); ctx.moveTo(0, y(0))
+      for (let p = 1; p < P; p++) ctx.quadraticCurveTo(x(p - 1), y(p - 1), (x(p - 1) + x(p)) / 2, (y(p - 1) + y(p)) / 2)
+      ctx.lineTo(w, y(P - 1))
       const g = ctx.createLinearGradient(0, 0, w, 0)
-      g.addColorStop(0, 'rgba(196,36,48,.9)'); g.addColorStop(1, 'rgba(196,36,48,.35)')
-      ctx.fillStyle = g; ctx.fill()
+      g.addColorStop(0, 'rgba(196,36,48,.25)'); g.addColorStop(.5, 'rgba(196,36,48,1)'); g.addColorStop(1, 'rgba(196,36,48,.25)')
+      ctx.strokeStyle = g; ctx.lineWidth = 3.5; ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke()
     }
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
