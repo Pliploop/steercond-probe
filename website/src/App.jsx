@@ -53,12 +53,9 @@ function Wave({ audio }) {
     const a = audio.analyser()
     if (!a || !audio.playing) return
     const ctx = cv.current.getContext('2d'), buf = new Uint8Array(a.fftSize)
-    const slow = matchMedia('(prefers-reduced-motion: reduce)').matches
-    let raf, last = 0
-    const draw = ts => {
+    let raf
+    const draw = () => {
       raf = requestAnimationFrame(draw)
-      if (slow && ts - last < 100) return
-      last = ts
       a.getByteTimeDomainData(buf)
       const { width: w, height: h } = cv.current
       ctx.clearRect(0, 0, w, h)
