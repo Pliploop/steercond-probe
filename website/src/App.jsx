@@ -62,11 +62,11 @@ function Wave({ audio }) {
       a.getByteTimeDomainData(buf)
       const { width: w, height: h } = cv.current
       ctx.clearRect(0, 0, w, h)
-      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineJoin = 'round'
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgb(196,36,48)'; ctx.lineJoin = 'round'
       ctx.beginPath()
       for (let x = 0; x < w; x++) {
         const v = (buf[Math.floor((x / w) * buf.length)] - 128) / 128
-        const y = h / 2 + v * h * 0.9
+        const y = h / 2 + v * h * 0.46
         x ? ctx.lineTo(x, y) : ctx.moveTo(x, y)
       }
       ctx.stroke()
@@ -74,7 +74,7 @@ function Wave({ audio }) {
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
   }, [audio.playing, audio.idx])
-  return <canvas ref={cv} width={120} height={28} className="wave" aria-hidden="true" />
+  return <canvas ref={cv} width={280} height={72} className="wave" aria-hidden="true" />
 }
 
 /* ---------- small pieces ---------- */
@@ -87,12 +87,14 @@ function Meta({ C, i }) {
     </span>
   )
 }
+const PlayIcon = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L5.9 2.7a.6.6 0 0 0-.9.5Z" fill="currentColor" /></svg>
+const PauseIcon = () => <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="3" width="2.8" height="10" rx="1" fill="currentColor" /><rect x="9.2" y="3" width="2.8" height="10" rx="1" fill="currentColor" /></svg>
 function Play({ audio, i, C }) {
   const on = audio.idx === i && (audio.playing || audio.loading)
   return (
     <button className={`play ${on ? 'on' : ''}`} aria-label={`${on ? 'Pause' : 'Play'} track #${i + 1}`}
       onClick={e => { e.stopPropagation(); audio.toggle(i, C[i].id) }}>
-      {audio.idx === i && audio.loading ? <span className="spin" /> : on ? '❚❚' : '▶'}
+      {audio.idx === i && audio.loading ? <span className="spin" /> : on ? <PauseIcon /> : <PlayIcon />}
     </button>
   )
 }
@@ -214,7 +216,7 @@ export default function App() {
 
         <section className="headline" aria-live="polite">
           <p className="eyebrow">{kindOf(I[3])} · {I[2]}</p>
-          <h1>{I[1]}</h1>
+          <InstrPicker {...{ M, instr, setInstr }} />
         </section>
 
         <section className="stage" aria-label="Similarity matrix">
@@ -239,6 +241,50 @@ export default function App() {
 
       {ready && <Panels {...{ C, slots, act: pin || hover, pinned: !!pin, unpin: () => setPin(null), F, sim, instr, facts, audio }} />}
       {audio.idx !== null && <NowPlaying {...{ audio, C }} />}
+    </div>
+  )
+}
+
+function InstrPicker({ M, instr, setInstr }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const ref = useRef(null)
+  const I = M.instructions.find(x => x[0] === instr)
+  useEffect(() => {
+    if (!open) return
+    const close = e => { if (!ref.current?.contains(e.target)) setOpen(false) }
+    const esc = e => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', close); addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', close); removeEventListener('keydown', esc) }
+  }, [open])
+  const match = x => !q || `${x[1]} ${x[2]} ${SHORT[x[0]] || ''}`.toLowerCase().includes(q.toLowerCase())
+  const groups = M.instructions.filter(x => x[0] !== 'none' && match(x)).reduce((g, x) => ((g[kindOf(x[3])] ||= []).push(x), g), {})
+  const pick = iid => { setInstr(iid); setOpen(false); setQ('') }
+  return (
+    <div className="picker" ref={ref}>
+      <button className="picker-btn" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <h1 key={instr}>{I[1]}</h1>
+        <svg className="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </button>
+      {open && (
+        <div className="menu" role="listbox" aria-label="Instructions">
+          <input autoFocus placeholder="Filter instructions" value={q} onChange={e => setQ(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { const first = Object.values(groups)[0]?.[0]; if (first) pick(first[0]) } }} />
+          <div className="menu-list">
+            {Object.entries(groups).map(([g, xs]) => (
+              <div key={g}>
+                <h4>{g}</h4>
+                {xs.map(x => (
+                  <button key={x[0]} role="option" aria-selected={x[0] === instr} onClick={() => pick(x[0])}>
+                    <span>{x[1]}</span><small>{x[2]}</small>
+                  </button>
+                ))}
+              </div>
+            ))}
+            {!Object.keys(groups).length && <p className="meta">No instruction matches.</p>}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -507,18 +553,26 @@ function About({ M, N }) {
   )
 }
 
+const fmtT = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
 function NowPlaying({ audio, C }) {
   const i = audio.idx, c = C[i]
   return (
     <div className="np" role="region" aria-label="Now playing">
-      <button className="play" aria-label={audio.playing ? 'Pause' : 'Play'} onClick={() => audio.toggle(i, c.id)}>{audio.loading ? <span className="spin dark" /> : audio.playing ? '❚❚' : '▶'}</button>
+      <button className="np-play" aria-label={audio.playing ? 'Pause' : 'Play'} onClick={() => audio.toggle(i, c.id)}>
+        {audio.loading ? <span className="spin" /> : audio.playing ? <PauseIcon /> : <PlayIcon />}
+      </button>
       <div className="t">
-        <span><b>#{i + 1}</b> · {genresOf(c)} — {audio.error ? 'Could not load this clip' : c.caption}</span>
-        <span className="prog" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); audio.seek((e.clientX - r.left) / r.width) }}>
-          <i style={{ width: `${(100 * audio.t) / (audio.dur || 30)}%` }} />
+        <span className="t1"><b>#{i + 1}</b><span>{genresOf(c)}</span></span>
+        <span className="t2">{audio.error ? 'Could not load this clip' : c.caption}</span>
+        <span className="tl">
+          <span className="num">{fmtT(audio.t)}</span>
+          <span className="prog" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); audio.seek((e.clientX - r.left) / r.width) }}>
+            <i style={{ width: `${(100 * audio.t) / (audio.dur || 30)}%` }} />
+          </span>
+          <span className="num">{fmtT(audio.dur || 30)}</span>
         </span>
       </div>
-      {LIVE_WAVE ? <Wave audio={audio} /> : <span className="num npt">{Math.floor(audio.t)}s</span>}
+      {LIVE_WAVE && <Wave audio={audio} />}
       <button className="x" aria-label="Stop" onClick={audio.stop}>✕</button>
     </div>
   )
