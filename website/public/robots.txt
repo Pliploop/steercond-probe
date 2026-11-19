@@ -1,0 +1,3 @@
+User-agent: *
+Disallow: /
+# Pre-publication: remove together with the noindex meta in index.html.

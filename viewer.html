@@ -1,0 +1,594 @@
+<title>Conditional Similarity Probe</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,500..800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: brand header; control strip (embedder pills · instruction stepper · N/A drawer); instruction headline;
+   matrix card (caption slots aligned to matrix rows); tabbed card for rankings. Light only, ink on white,
+   one red accent shared with the colour scale. */
+:root {
+  color-scheme: light;
+  --paper: #ffffff; --ground: #f2f3f5; --ink: #111318; --ink2: #464b57; --ink3: #8b909b; --rule: #e2e4e9; --rule2: #eef0f3;
+  --accent: #c42430; --accent-soft: #fbeaeb; --gain: #10804e; --gain-soft: #e7f4ed; --loss: #c42430; --loss-soft: #fbeaeb; --na: #a0700c;
+  --display: "Archivo", "Inter", system-ui, sans-serif; --sans: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  --cell: 52px; --radius: 12px;
+}
+* { box-sizing: border-box; }
+body { background: var(--ground); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 64px; }
+.wrap { max-width: 1200px; margin: 0 auto; display: grid; gap: 14px; }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.label { font-family: var(--display); font-stretch: 112%; font-weight: 600; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink3); }
+.card { background: var(--paper); border-radius: var(--radius); box-shadow: 0 1px 0 var(--rule), 0 0 0 1px var(--rule2); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* header */
+.top { display: flex; align-items: center; gap: 14px; padding: 4px 2px 6px; }
+.mark { width: 34px; height: 34px; border-radius: 9px; background:
+  linear-gradient(135deg, var(--accent) 0 50%, transparent 50%), linear-gradient(var(--ink), var(--ink)); flex: none; }
+h1 { font-family: var(--display); font-stretch: 118%; font-weight: 750; font-size: 19px; letter-spacing: -.01em; margin: 0; line-height: 1.15; }
+#status { margin: 1px 0 0; color: var(--ink3); font-size: 12.5px; }
+
+/* control strip */
+.controls { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: end; padding: 14px 16px; }
+@media (max-width: 980px) { .controls { grid-template-columns: minmax(0, 1fr); } }
+.ctl { display: grid; gap: 6px; min-width: 0; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { border: 1px solid var(--rule); background: var(--paper); border-radius: 9px; padding: 6px 11px 7px; text-align: left; display: grid; line-height: 1.2; transition: border-color .12s, background .12s; }
+.pill b { font-weight: 600; font-size: 13px; }
+.pill small { color: var(--ink3); font-size: 11px; }
+.pill:hover { border-color: var(--ink3); }
+.pill[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+.pill[aria-pressed="true"] small { color: #b9bcc4; }
+.stepper { display: flex; gap: 6px; min-width: 0; }
+.stepper select { flex: 1; min-width: 0; height: 44px; border: 1px solid var(--rule); border-radius: 9px; padding: 0 12px; background: var(--paper); font-size: 14px; font-weight: 500; }
+.iconbtn { width: 44px; height: 44px; flex: none; border: 1px solid var(--rule); border-radius: 9px; background: var(--paper); display: grid; place-items: center; font-size: 18px; color: var(--ink2); }
+.iconbtn:hover { border-color: var(--ink3); color: var(--ink); }
+
+/* N/A drawer */
+.drawer { position: relative; }
+.drawer > summary { list-style: none; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border: 1px solid var(--rule); border-radius: 9px; cursor: pointer; font-weight: 500; white-space: nowrap; }
+.drawer > summary::-webkit-details-marker { display: none; }
+.drawer > summary::after { content: "▾"; color: var(--ink3); font-size: 12px; }
+.drawer[open] > summary { border-color: var(--ink); }
+.badge { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--rule2); color: var(--ink2); }
+.badge.on { background: #fdf3dc; color: var(--na); }
+.drawer-body { position: absolute; right: 0; top: 52px; z-index: 40; width: min(440px, calc(100vw - 32px)); background: var(--paper); border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(17,19,24,.16), 0 0 0 1px var(--rule); padding: 16px; display: grid; gap: 14px; }
+@media (max-width: 980px) { .drawer-body { position: static; width: auto; margin-top: 8px; box-shadow: 0 0 0 1px var(--rule); } }
+.radios { display: grid; gap: 4px; }
+.radio { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; padding: 7px 9px; border-radius: 8px; cursor: pointer; }
+.radio:hover { background: var(--ground); }
+.radio input { margin: 3px 0 0; accent-color: var(--ink); }
+.radio b { font-weight: 500; display: block; }
+.radio small { color: var(--ink3); font-size: 12px; }
+.radio.off { opacity: .45; cursor: not-allowed; }
+.slider { display: grid; gap: 4px; }
+.slider input { width: 100%; accent-color: var(--accent); }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat { background: var(--ground); border-radius: 8px; padding: 7px 10px; display: grid; min-width: 92px; }
+.stat b { font-family: var(--mono); font-weight: 500; font-size: 15px; }
+.stat span { font-size: 11px; color: var(--ink3); }
+
+/* headline */
+.headline { padding: 8px 2px 2px; display: grid; gap: 4px; }
+.headline h2 { font-family: var(--display); font-stretch: 108%; font-weight: 720; font-size: clamp(22px, 3vw, 32px); letter-spacing: -.015em; line-height: 1.12; margin: 0; text-wrap: balance; }
+.headline .q { margin: 0; color: var(--ink2); font-size: 14px; }
+.kind { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink2); border: 1px solid var(--rule); border-radius: 99px; padding: 1px 8px; margin-right: 8px; }
+
+/* matrix card */
+.stage { padding: 14px 16px 16px; display: grid; gap: 12px; }
+.stage-head { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; }
+.seg { display: inline-flex; background: var(--ground); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: none; border-radius: 8px; padding: 6px 13px; font-weight: 500; color: var(--ink2); font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(17,19,24,.12), 0 0 0 1px var(--rule); }
+.legend { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink3); flex-wrap: wrap; }
+.legend i { width: 120px; height: 8px; border-radius: 99px; box-shadow: inset 0 0 0 1px rgba(17,19,24,.08); }
+.scroller { overflow-x: auto; padding-bottom: 4px; }
+.board { display: grid; grid-template-columns: 380px max-content; gap: 14px; min-width: 720px; }
+.slots { display: grid; grid-auto-rows: var(--cell); gap: 3px; padding-top: 25px; }
+.slot { display: grid; grid-template-columns: 26px 30px minmax(0, 1fr) auto; gap: 8px; align-items: center; position: relative; padding: 0 4px 0 0; border-radius: 9px; }
+.slot .n { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--ink3); text-align: center; height: 26px; line-height: 26px; border-radius: 7px; background: var(--ground); }
+.slot .txt { display: grid; min-width: 0; }
+.slot input { border: 0; background: none; padding: 0; min-width: 0; width: 100%; font-size: 13px; font-weight: 500; text-overflow: ellipsis; border-bottom: 1px dashed transparent; }
+.slot input:hover { border-bottom-color: var(--rule); }
+.slot input:focus { outline: none; border-bottom-color: var(--ink); }
+.slot .g { font-size: 11.5px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slot .acts { display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+.slot:hover .acts, .slot:focus-within .acts { opacity: 1; }
+.slot .acts button { width: 28px; height: 28px; border: 0; background: none; border-radius: 7px; color: var(--ink3); font-size: 14px; }
+.slot .acts button:hover { background: var(--ground); color: var(--ink); }
+.slot.row { background: var(--accent-soft); } .slot.row .n { background: var(--accent); color: #fff; }
+.slot.col .n { background: var(--ink); color: #fff; }
+.pop { position: absolute; left: 72px; right: 0; top: 46px; z-index: 35; background: var(--paper); border-radius: 10px; box-shadow: 0 14px 40px rgba(17,19,24,.18), 0 0 0 1px var(--rule);
+  max-height: 340px; overflow-y: auto; padding: 4px; }
+.pop div { padding: 7px 9px; font-size: 12.5px; cursor: pointer; border-radius: 7px; }
+.pop div:hover, .pop div.on { background: var(--ground); }
+.pop .g { font-size: 11px; color: var(--ink3); }
+.slot-actions { display: flex; gap: 8px; padding-left: 34px; }
+.ghost { border: 1px solid var(--rule); background: var(--paper); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 500; color: var(--ink2); }
+.ghost:hover { border-color: var(--ink3); color: var(--ink); }
+.mgrid { display: grid; gap: 3px; width: max-content; }
+.mgrid .h { height: 22px; display: grid; place-items: center; font-family: var(--mono); font-size: 11.5px; color: var(--ink3); border-radius: 6px; }
+.mgrid .h.row { background: var(--accent); color: #fff; } .mgrid .h.col { background: var(--ink); color: #fff; }
+.mgrid .c { width: var(--cell); height: var(--cell); display: grid; place-items: center; font-family: var(--mono); font-size: 11.5px; border-radius: 6px; cursor: pointer; font-variant-numeric: tabular-nums;
+  transition: transform .08s; }
+.mgrid .c:hover { transform: scale(1.06); box-shadow: 0 4px 14px rgba(17,19,24,.18); position: relative; z-index: 2; }
+.mgrid .c.d { background: var(--ground); cursor: default; }
+.mgrid .c.d:hover { transform: none; box-shadow: none; }
+.mgrid .c.na { background: repeating-linear-gradient(135deg, #f1f2f4 0 4px, #fafafb 4px 8px) !important; color: var(--ink3) !important; font-size: 10px; letter-spacing: .04em; }
+.mgrid .c.pin { box-shadow: 0 0 0 2px var(--ink), 0 4px 14px rgba(17,19,24,.2); position: relative; z-index: 3; }
+.hint { font-size: 12.5px; color: var(--ink3); }
+
+/* glass panels */
+.glass { position: fixed; z-index: 50; width: min(400px, calc(100vw - 32px)); max-height: 44vh; overflow-y: auto; padding: 14px 16px;
+  background: rgba(255,255,255,.72); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6);
+  border: 1px solid rgba(255,255,255,.8); border-radius: 16px; box-shadow: 0 16px 44px rgba(17,19,24,.18), 0 0 0 1px rgba(17,19,24,.06), inset 0 1px 0 rgba(255,255,255,.9);
+  pointer-events: none; display: grid; gap: 7px; font-size: 13.5px; line-height: 1.5; }
+.glass.pinned { pointer-events: auto; }
+.glass p { margin: 0; }
+.glass .tag { display: flex; align-items: center; gap: 8px; }
+.glass:not(.pinned) .play { display: none; }
+.glass .chip { font-family: var(--mono); font-size: 11.5px; font-weight: 500; color: #fff; border-radius: 6px; padding: 1px 7px; }
+.glass .close { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border: 0; background: rgba(17,19,24,.06); border-radius: 8px; color: var(--ink2); }
+.vals { display: flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-size: 12.5px; color: var(--ink2); flex-wrap: wrap; }
+.vals b { font-size: 16px; color: var(--ink); font-weight: 500; }
+.meta { font-size: 12px; color: var(--ink3); }
+.facts { display: grid; gap: 3px; font-size: 12.5px; color: var(--ink2); border-top: 1px solid rgba(17,19,24,.08); padding-top: 7px; }
+.facts b { color: var(--ink); font-weight: 500; }
+.tagna { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--na); background: #fdf3dc; border-radius: 5px; padding: 1px 6px; width: max-content; }
+
+/* lists card */
+.lists { overflow: hidden; }
+.tabs { display: flex; gap: 4px; padding: 10px 12px 0; border-bottom: 1px solid var(--rule); overflow-x: auto; }
+.tabs button { border: 0; background: none; padding: 10px 12px 12px; font-weight: 600; font-size: 13.5px; color: var(--ink3); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.panel { padding: 16px; display: grid; gap: 14px; }
+.source { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 12px; align-items: start; background: var(--ground); border-radius: 10px; padding: 12px 14px; }
+.source .chip { font-family: var(--mono); font-size: 12px; font-weight: 500; color: #fff; background: var(--accent); border-radius: 7px; padding: 2px 8px; }
+.source p { margin: 0; font-size: 13.5px; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
+@media (max-width: 860px) { .two { grid-template-columns: minmax(0, 1fr); } }
+.colhead { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 2px solid var(--ink); margin-bottom: 2px; }
+.colhead b { font-family: var(--display); font-stretch: 108%; font-weight: 700; font-size: 15px; }
+.colhead span { font-size: 12.5px; color: var(--ink2); }
+ol { list-style: none; margin: 0; padding: 0; }
+.item { display: grid; grid-template-columns: 32px minmax(0, 1fr) 112px; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rule2); }
+.item .rkc { display: grid; gap: 8px; justify-items: start; align-content: start; }
+.item .rk { font-family: var(--display); font-stretch: 100%; font-weight: 700; font-size: 18px; color: var(--ink3); line-height: 1.2; }
+.item .cap p { margin: 0 0 3px; font-size: 13.5px; }
+.item .score { display: grid; gap: 4px; align-content: start; justify-items: end; }
+.item .score b { font-family: var(--mono); font-weight: 500; font-size: 14px; }
+.bar { width: 100%; height: 5px; border-radius: 99px; background: var(--rule2); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.delta { font-family: var(--mono); font-size: 11.5px; font-weight: 500; border-radius: 5px; padding: 1px 6px; }
+.delta.up { color: var(--gain); background: var(--gain-soft); } .delta.down { color: var(--loss); background: var(--loss-soft); }
+.moved { font-size: 11.5px; color: var(--ink3); }
+.moved.up { color: var(--gain); } .moved.down { color: var(--loss); }
+/* audio */
+.play { width: 30px; height: 30px; flex: none; border: 0; border-radius: 99px; background: var(--ink); color: #fff; display: grid; place-items: center; font-size: 10px; padding: 0 0 0 2px; transition: background .12s, transform .08s; }
+.play:hover { transform: scale(1.08); }
+.play.on { background: var(--accent); padding: 0; }
+.play[disabled] { background: var(--rule); cursor: default; }
+.sp { color: var(--ink3); text-decoration: none; border-bottom: 1px solid var(--rule); }
+.sp:hover { color: #1db954; border-bottom-color: #1db954; }
+.np { position: fixed; z-index: 60; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(560px, calc(100vw - 32px));
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 16px;
+  background: rgba(17,19,24,.86); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); color: #fff; box-shadow: 0 16px 44px rgba(17,19,24,.3); }
+.np .t { min-width: 0; display: grid; gap: 5px; }
+.np .t span { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np .prog { height: 3px; border-radius: 99px; background: rgba(255,255,255,.18); overflow: hidden; }
+.np .prog i { display: block; height: 100%; width: 0; background: #fff; }
+.np .play { background: #fff; color: var(--ink); }
+.np .x { border: 0; background: none; color: #b9bcc4; font-size: 15px; width: 28px; height: 28px; }
+.about { display: grid; gap: 10px; max-width: 78ch; color: var(--ink2); font-size: 13.5px; }
+.about p { margin: 0; }
+.about b { color: var(--ink); font-weight: 600; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <span class="mark" aria-hidden="true"></span>
+    <div><h1>Conditional Similarity Probe</h1><p id="status">Loading data…</p></div>
+  </header>
+
+  <section class="card controls" aria-label="Controls">
+    <div class="ctl"><span class="label">Embedder</span><div class="pills" id="models"></div></div>
+    <div class="ctl"><label class="label" for="instr">Modulating instruction</label>
+      <div class="stepper"><button class="iconbtn" id="prevI" aria-label="Previous instruction">‹</button><select id="instr"></select><button class="iconbtn" id="nextI" aria-label="Next instruction">›</button></div></div>
+    <details class="drawer" id="naDrawer">
+      <summary>Not applicable <span class="badge" id="naBadge">Off</span></summary>
+      <div class="drawer-body">
+        <div class="ctl"><span class="label">Mark captions that cannot answer the instruction</span><div class="radios" id="naRadios"></div></div>
+        <div class="slider" id="thrBox" hidden><span class="label">Confidence threshold</span><input type="range" id="thr" step="0.001"><span class="meta" id="thrVal"></span></div>
+        <div class="ctl"><span class="label">N/A detection, this embedder and instruction</span><div class="stats" id="naStats"></div></div>
+      </div>
+    </details>
+  </section>
+
+  <section class="headline" aria-live="polite">
+    <span class="label">Instruction</span>
+    <h2 id="iTitle">–</h2>
+    <p class="q" id="iQ"></p>
+  </section>
+
+  <section class="card stage" aria-label="Similarity matrix">
+    <div class="stage-head">
+      <div class="seg" id="viewSeg" role="group" aria-label="Matrix view"><button data-v="before" aria-pressed="false">No instruction</button><button data-v="after" aria-pressed="true">With instruction</button><button data-v="delta" aria-pressed="false">Change</button></div>
+      <div class="legend" id="scale"></div>
+    </div>
+    <div class="scroller"><div class="board"><div class="slots" id="slots"></div><div class="mgrid" id="grid"></div></div></div>
+    <div class="slot-actions"><button class="ghost" id="add">+ Add caption</button><button class="ghost" id="randAll">Shuffle all</button><span class="hint" style="align-self:center">Click a caption to search · ▶ plays seconds 10–20 · hover a cell to read both, click to pin</span></div>
+  </section>
+
+  <section class="card lists">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-t="rank" aria-selected="true">Ranking of these captions</button>
+      <button role="tab" data-t="top" aria-selected="false">Top 10 in the dataset</button>
+      <button role="tab" data-t="about" aria-selected="false">About the data</button>
+    </div>
+    <div class="panel" id="p-rank">
+      <div class="source" id="srcRank"></div>
+      <div class="two">
+        <div><div class="colhead"><b>No instruction</b><span>General caption similarity</span></div><ol id="ord0"></ol></div>
+        <div><div class="colhead"><b>With instruction</b><span id="ord1Lbl"></span></div><ol id="ord1"></ol></div>
+      </div>
+    </div>
+    <div class="panel" id="p-top" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="seg" id="topSeg" role="group" aria-label="Top 10 view"><button data-v="before" aria-pressed="false">No instruction</button><button data-v="after" aria-pressed="true">With instruction</button></div>
+        <span class="hint" id="topHint"></span>
+      </div>
+      <div class="source" id="srcTop"></div>
+      <ol id="top"></ol>
+    </div>
+    <div class="panel" id="p-about" hidden><div class="about" id="about"></div></div>
+  </section>
+</div>
+<div class="np" id="np" hidden><button class="play on" id="npPlay" aria-label="Pause">❚❚</button><div class="t"><span id="npTitle"></span><span class="prog"><i id="npProg"></i></span></div><button class="x" id="npX" aria-label="Stop">✕</button></div>
+<div class="glass" id="gCol" hidden></div>
+<div class="glass" id="gRow" hidden></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const MODELS = {
+  qwen3emb8b_q: ["Qwen3-Emb 8B", "question wording"], inbedder7b: ["InBedder 7B", "answer-is-embedding"],
+  inbedder7b_na: ["InBedder 7B · none", "may answer “none”"], llm_extract: ["LLM extraction", "Qwen3.5-9B → Qwen3-Emb"] };
+const NA_MODES = [
+  ["off", "Off", "Show every pair"],
+  ["jev", "JEV-9B", "Calibrated P(answerable) below 0.5"],
+  ["anchor", "Embedder confidence", "Too close to the null caption “A piece of music.”"],
+  ["none", "InBedder says “none”", "Literal answer of InBedder 7B · none"],
+  ["llm", "LLM says “not mentioned”", "Qwen3.5-9B extraction answer"]];
+const KIND = { attribute: "Attribute", question: "Yes / no question", paraphrase: "Paraphrase" };
+let M, C, N, K, DIM, JEV = null, AVAIL = {};
+const st = { model: null, instr: "instrumentation", view: "after", topView: "after", na: "off", thr: null, slots: [], hover: null, pin: null, tab: "rank" };
+const files = {}, jsons = {};
+
+/* ---------- data ---------- */
+function b64(t) { const s = atob(t.trim()), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; }
+async function getFile(model, iid) {
+  const key = model + "/" + iid;
+  if (files[key]) return files[key];
+  const buf = b64(await (await fetch(`bin/${model}__${iid}.txt`)).text()), info = M.files[key];
+  let o = 0; const take = (T, len, bytes) => { const a = new T(buf, o, len); o += len * bytes; return a; };
+  const f = { info, emb: take(Int8Array, N * DIM, 1), idx: take(Uint16Array, N * K, 2), sim: take(Uint16Array, N * K, 2) };
+  if (iid !== "none" && info.app) f.app = take(Uint16Array, N, 2);
+  f.sc2 = Float32Array.from(info.scale, s => s * s);
+  return (files[key] = f);
+}
+async function getJson(path) {
+  if (jsons[path] !== undefined) return jsons[path];
+  try { jsons[path] = await (await fetch(path)).json(); } catch { jsons[path] = null; }
+  return jsons[path];
+}
+const deq = (q, lo, hi) => lo + (hi - lo) * q / 65535;
+function cell(f, a, b) { let s = 0; const e = f.emb, oa = a * DIM, ob = b * DIM; for (let k = 0; k < DIM; k++) s += e[oa + k] * e[ob + k] * f.sc2[k]; return s; }
+let F0, F1;
+const cur = () => ({ f0: F0, f1: st.instr === "none" ? F0 : F1 });
+const info = key => M.files[st.model + "/" + key];
+
+/* ---------- N/A ---------- */
+const NOT_MENTIONED = /^not mentioned|\b(does not|doesn't|do not) (state|specify|mention|imply|indicate|say)|\bnot (specified|stated|mentioned|indicated)/i;
+function trimLoop(t) {  // InBedder is trained for ~3-token answers; greedy decoding past that loops, so cut at the first repeated 3-word phrase
+  const w = t.split(/\s+/), seen = new Set();
+  for (let i = 0; i + 2 < w.length; i++) { const g = w.slice(i, i + 3).join(" ").toLowerCase(); if (seen.has(g)) return w.slice(0, i).join(" ") + " …"; seen.add(g); }
+  return t;
+}
+const gen = (m, iid) => M.gens[m] && M.gens[m].includes(iid) ? jsons[`gen/${m}/${iid}.json`] : null;
+const llmAns = iid => M.llm.includes(iid) ? jsons[`llm/${iid}.json`] : null;
+function jevP(i) { if (!JEV || st.instr === "none") return null; const r = M.jev_order.indexOf(st.instr); return r < 0 ? null : JEV[r * N + i] / 255; }
+function appSim(i) { const f = cur().f1; return f && f.app ? deq(f.app[i], -1, 1) : null; }
+function isNA(i) {
+  if (st.na === "off" || st.instr === "none") return false;
+  if (st.na === "jev") { const p = jevP(i); return p !== null && p < 0.5; }
+  if (st.na === "anchor") { const a = appSim(i); return a !== null && a >= st.thr; }
+  if (st.na === "none") { const g = gen("inbedder7b_na", st.instr); return !!g && /^none\b/i.test(g[i]); }
+  if (st.na === "llm") { const a = llmAns(st.instr); return !!a && NOT_MENTIONED.test(a[i]); }
+  return false;
+}
+function defaultThr() {  // threshold whose N/A rate matches JEV's for this instruction (else the top 10 %)
+  const f = cur().f1; if (!f || !f.app) return null;
+  const v = Array.from(f.app, q => deq(q, -1, 1)).sort((x, y) => y - x);
+  let rate = 0.1; if (JEV) { const r = M.jev_order.indexOf(st.instr); if (r >= 0) { let c = 0; for (let i = 0; i < N; i++) c += JEV[r * N + i] < 128; rate = c / N; } }
+  return v[Math.min(N - 1, Math.max(0, Math.round(rate * N) - 1))];
+}
+function drawNA() {
+  $("#naRadios").innerHTML = NA_MODES.map(([v, t, s]) => { const off = v !== "off" && !AVAIL[v];
+    return `<label class="radio ${off ? "off" : ""}"><input type="radio" name="na" value="${v}" ${st.na === v ? "checked" : ""} ${off ? "disabled" : ""}><span><b>${t}</b><small>${off ? "Not computed for this data" : s}</small></span></label>`; }).join("");
+  $("#naRadios").querySelectorAll("input").forEach(r => r.onchange = () => { st.na = r.value; drawNA(); drawGrid(); showPanels(); drawLists(); });
+  const fi = st.instr === "none" ? null : info(st.instr), f1 = cur().f1;
+  const showThr = st.na === "anchor" && fi && f1 && f1.app;
+  $("#thrBox").hidden = !showThr;
+  if (showThr) { const t = $("#thr"); t.min = fi.anchor_lo; t.max = fi.anchor_hi; t.value = st.thr; $("#thrVal").textContent = `similarity ≥ ${st.thr.toFixed(3)} counts as N/A · default matches JEV's N/A rate`; }
+  let n = 0; if (st.na !== "off") for (let i = 0; i < N; i++) n += isNA(i);
+  const fmt = x => x == null ? "–" : x.toFixed(2);
+  $("#naStats").innerHTML = !fi ? `<span class="meta">Pick an instruction.</span>` :
+    `<div class="stat"><b>${st.na === "off" ? "–" : n.toLocaleString()}</b><span>captions marked N/A</span></div>
+     <div class="stat"><b>${fmt(fi.auroc_anchor_vs_jev)}</b><span>confidence vs JEV, AUROC</span></div>
+     <div class="stat"><b>${fmt(fi.auroc_anchor_vs_llm)}</b><span>confidence vs LLM, AUROC</span></div>
+     <div class="stat"><b>${fmt(fi.auroc_jev_vs_llm)}</b><span>JEV vs LLM, AUROC</span></div>`;
+  const b = $("#naBadge"); b.textContent = st.na === "off" ? "Off" : `${n.toLocaleString()} N/A`; b.classList.toggle("on", st.na !== "off");
+}
+
+/* ---------- audio: 10 s clips packed 50 per mp3 sprite ---------- */
+const player = new Audio(); player.preload = "auto";
+let playing = null, clipEnd = 0;
+const playBtn = i => M.audio ? `<button class="play ${playing === i ? "on" : ""}" data-play="${i}" aria-label="${playing === i ? "Pause" : "Play"} track #${i + 1}">${playing === i ? "❚❚" : "▶"}</button>` : "";
+const spotify = i => C[i].sp ? ` · <a class="sp" href="https://open.spotify.com/track/${C[i].sp}" target="_blank" rel="noopener noreferrer">Spotify ↗</a>` : "";
+function syncPlay() {
+  document.querySelectorAll("[data-play]").forEach(b => { const on = +b.dataset.play === playing; b.classList.toggle("on", on); b.textContent = on ? "❚❚" : "▶"; b.setAttribute("aria-label", (on ? "Pause" : "Play") + " track #" + (+b.dataset.play + 1)); });
+  $("#np").hidden = playing === null;
+  if (playing !== null) $("#npTitle").textContent = `#${playing + 1} · ${C[playing].genres.slice(0, 3).join(" · ")} — ${C[playing].caption}`;
+}
+async function play(i) {
+  if (playing === i) { player.pause(); playing = null; return syncPlay(); }
+  const A = M.audio, src = `audio/s${String(Math.floor(i / A.per)).padStart(3, "0")}.mp3`, t0 = (i % A.per) * A.clip_s;
+  playing = i; clipEnd = t0 + A.clip_s; syncPlay();
+  if (!player.src.endsWith(src)) { player.src = src; await new Promise(r => player.addEventListener("loadedmetadata", r, { once: true })); }
+  player.currentTime = t0;
+  try { await player.play(); } catch { playing = null; syncPlay(); }
+}
+player.addEventListener("timeupdate", () => {
+  if (playing === null) return;
+  const A = M.audio, t0 = clipEnd - A.clip_s;
+  $("#npProg").style.width = Math.max(0, Math.min(100, 100 * (player.currentTime - t0) / A.clip_s)) + "%";
+  if (player.currentTime >= clipEnd - 0.05) { player.pause(); playing = null; syncPlay(); }
+});
+document.addEventListener("click", e => { const b = e.target.closest("[data-play]"); if (b) { e.stopPropagation(); play(+b.dataset.play); } });
+
+/* ---------- caption slots ---------- */
+const rand = () => Math.floor(Math.random() * N);
+const genres = i => esc(C[i].genres.slice(0, 3).join(" · "));
+function search(q) {
+  const toks = q.toLowerCase().split(/\s+/).filter(Boolean), hits = [];
+  for (let i = 0; i < N && hits.length < 30; i++) {
+    const c = C[i], hay = (c.caption + " " + c.genres.join(" ") + " #" + (i + 1)).toLowerCase();
+    if (toks.every(t => hay.includes(t))) hits.push(i);
+  }
+  return hits;
+}
+function drawSlots() {
+  $("#slots").innerHTML = st.slots.map((idx, r) => `<div class="slot" data-r="${r}"><span class="n">${r + 1}</span>${playBtn(idx) || "<span></span>"}
+      <div class="txt"><input type="text" id="slot${r}" value="${esc(C[idx].caption)}" aria-label="Caption ${r + 1}, type to search"><span class="g">#${idx + 1} · ${genres(idx)}</span></div>
+      <div class="acts"><button class="rnd" title="Random caption" aria-label="Random caption">⟳</button>${st.slots.length > 2 ? `<button class="x" title="Remove" aria-label="Remove caption">✕</button>` : ""}</div></div>`).join("");
+  $("#slots").querySelectorAll(".slot").forEach(el => {
+    const r = +el.dataset.r, inp = el.querySelector("input");
+    el.querySelector(".rnd").onclick = () => { st.slots[r] = rand(); refresh(); };
+    const x = el.querySelector(".x"); if (x) x.onclick = () => { st.slots.splice(r, 1); st.pin = null; refresh(); };
+    let pop = null, sel = 0, hits = [];
+    const close = () => { if (pop) { pop.remove(); pop = null; } };
+    const choose = i => { st.slots[r] = i; close(); refresh(); };
+    const show = () => {
+      hits = search(inp.value); sel = 0; close();
+      pop = document.createElement("div"); pop.className = "pop";
+      pop.innerHTML = hits.length ? hits.map((i, k) => `<div data-i="${i}" class="${k === 0 ? "on" : ""}"><span class="g">#${i + 1} · ${genres(i)}</span><br>${esc(C[i].caption.slice(0, 170))}…</div>`).join("") : `<div class="g">No caption matches every word</div>`;
+      pop.querySelectorAll("[data-i]").forEach(d => d.onmousedown = e => { e.preventDefault(); choose(+d.dataset.i); });
+      el.appendChild(pop);
+    };
+    inp.onfocus = () => { inp.select(); };
+    inp.oninput = show;
+    inp.onblur = () => { close(); inp.value = C[st.slots[r]].caption; };
+    inp.onkeydown = e => {
+      if (!pop) return;
+      const items = pop.querySelectorAll("[data-i]");
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[sel]?.classList.remove("on");
+        sel = (sel + (e.key === "ArrowDown" ? 1 : items.length - 1)) % Math.max(1, items.length); items[sel]?.classList.add("on"); items[sel]?.scrollIntoView({ block: "nearest" }); }
+      else if (e.key === "Enter" && hits.length) { e.preventDefault(); choose(hits[sel]); inp.blur(); }
+      else if (e.key === "Escape") { close(); inp.blur(); }
+    };
+  });
+}
+
+/* ---------- matrix ---------- */
+const WHITE = [255, 255, 255], RED = [196, 36, 48], GREEN = [16, 128, 78];
+const mix = (a, b, t) => a.map((x, k) => Math.round(x + (b[k] - x) * t));
+const viewKey = () => st.view === "before" || st.instr === "none" ? "none" : st.instr;
+const isDelta = () => st.view === "delta" && st.instr !== "none";
+function cellColor(v) {
+  const fi = info(viewKey());
+  if (isDelta()) { const m = Math.max(Math.abs(fi.dlo), Math.abs(fi.dhi)), t = Math.max(-1, Math.min(1, v / m));
+    return { c: t >= 0 ? mix(WHITE, GREEN, t) : mix(WHITE, RED, -t), t: Math.abs(t) }; }
+  const t = Math.max(0, Math.min(1, (v - fi.lo) / (fi.hi - fi.lo)));
+  return { c: mix(WHITE, RED, t), t };
+}
+function value(a, b) {
+  const { f0, f1 } = cur();
+  if (st.view === "before" || st.instr === "none") return cell(f0, a, b);
+  if (st.view === "after") return cell(f1, a, b);
+  return cell(f1, a, b) - cell(f0, a, b);
+}
+function drawGrid() {
+  const ids = st.slots, n = ids.length;
+  let h = "";
+  for (let c = 0; c < n; c++) h += `<div class="h" data-h="${c}">${c + 1}</div>`;
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    if (c > r) { h += `<div></div>`; continue; }
+    if (ids[r] === ids[c]) { h += `<div class="c d"></div>`; continue; }
+    const pin = st.pin && st.pin.r === r && st.pin.c === c ? "pin" : "";
+    if (isNA(ids[r]) || isNA(ids[c])) { h += `<div class="c na ${pin}" data-r="${r}" data-c="${c}">N/A</div>`; continue; }
+    const v = value(ids[r], ids[c]), { c: col, t } = cellColor(v);
+    const txt = isDelta() ? (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2).slice(1) : v.toFixed(2);
+    h += `<div class="c ${pin}" data-r="${r}" data-c="${c}" style="background:rgb(${col});color:${t > .55 ? "#fff" : "#111318"}">${txt}</div>`;
+  }
+  const g = $("#grid");
+  g.style.gridTemplateColumns = `repeat(${n}, var(--cell))`;
+  g.innerHTML = h;
+  const fi = info(viewKey());
+  if (isDelta()) {
+    const m = Math.max(Math.abs(fi.dlo), Math.abs(fi.dhi));
+    $("#scale").innerHTML = `<span class="num">−${m.toFixed(2)}</span><i style="background:linear-gradient(90deg,rgb(${RED}),#fff,rgb(${GREEN}))"></i><span class="num">+${m.toFixed(2)}</span><span>change from adding the instruction</span>`;
+  } else {
+    $("#scale").innerHTML = `<span class="num">${fi.lo.toFixed(2)}</span><i style="background:linear-gradient(90deg,#fff,rgb(${RED}))"></i><span class="num">${fi.hi.toFixed(2)}</span><span>cosine, min–max over all ${N.toLocaleString()} captions</span>`;
+  }
+  g.querySelectorAll(".c[data-r]").forEach(d => {
+    const r = +d.dataset.r, c = +d.dataset.c;
+    d.onmouseenter = () => { st.hover = { r, c }; if (!st.pin) showPanels(); };
+    d.onclick = () => { st.pin = st.pin && st.pin.r === r && st.pin.c === c ? null : { r, c }; drawGrid(); showPanels(); drawLists(); };
+  });
+  g.onmouseleave = () => { st.hover = null; if (!st.pin) showPanels(); };
+  showPanels();
+}
+
+/* ---------- floating panels ---------- */
+function facts(i) {
+  const out = [], p = jevP(i), a = appSim(i);
+  const g = st.model.startsWith("inbedder") ? gen(st.model, st.instr) : null; if (g) out.push(`InBedder answer · <b>${esc(trimLoop(g[i]))}</b>`);
+  const l = llmAns(st.instr); if (l) out.push(`LLM answer · <b>${esc(l[i])}</b>`);
+  const nums = []; if (p !== null) nums.push(`JEV P(answerable) <b class="num">${p.toFixed(2)}</b>`); if (a !== null) nums.push(`null-caption sim <b class="num">${a.toFixed(2)}</b>`);
+  if (nums.length) out.push(nums.join(" · "));
+  return (isNA(i) ? `<span class="tagna">Not applicable</span>` : "") + (out.length ? `<div class="facts">${out.map(x => `<div>${x}</div>`).join("")}</div>` : "");
+}
+function panelHtml(i, chip, color, extra) {
+  const c = C[i];
+  return `${st.pin ? `<button class="close" aria-label="Unpin">✕</button>` : ""}<div class="tag"><span class="chip" style="background:${color}">${chip}</span>${playBtn(i)}<span class="meta">#${i + 1} · ${genres(i)}${spotify(i)}</span></div>${extra || ""}<p>${esc(c.caption)}</p>${facts(i)}`;
+}
+function showPanels() {
+  const act = st.pin || st.hover, gC = $("#gCol"), gR = $("#gRow");
+  document.querySelectorAll(".slot").forEach(s => { const r = +s.dataset.r; s.classList.toggle("row", !!act && r === act.r); s.classList.toggle("col", !!act && r === act.c); });
+  document.querySelectorAll(".mgrid .h").forEach((h, c) => { h.classList.toggle("col", !!act && act.c === c); });
+  if (!act) { gC.hidden = gR.hidden = true; return; }
+  const el = $(`#grid .c[data-r="${act.r}"][data-c="${act.c}"]`); if (!el) { gC.hidden = gR.hidden = true; return; }
+  const a = st.slots[act.r], b = st.slots[act.c], { f0, f1 } = cur(), v0 = cell(f0, a, b), v1 = cell(f1, a, b), d = v1 - v0;
+  const vals = st.instr === "none" ? `<div class="vals"><b>${v0.toFixed(3)}</b> cosine</div>`
+    : `<div class="vals"><span>${v0.toFixed(3)}</span>→<b>${v1.toFixed(3)}</b><span class="delta ${d >= 0 ? "up" : "down"}">${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(3)}</span></div>`;
+  gC.innerHTML = panelHtml(b, `${act.c + 1}`, "var(--ink)", vals); gR.innerHTML = panelHtml(a, `${act.r + 1}`, "var(--accent)");
+  for (const g of [gC, gR]) { g.hidden = false; g.classList.toggle("pinned", !!st.pin); const x = g.querySelector(".close"); if (x) x.onclick = () => { st.pin = null; drawGrid(); drawLists(); }; }
+  placePanels(el);
+}
+function placePanels(el) {
+  const r = el.getBoundingClientRect(), gC = $("#gCol"), gR = $("#gRow"), vw = innerWidth, vh = innerHeight, pad = 12;
+  const cw = gC.offsetWidth, ch = gC.offsetHeight, rw = gR.offsetWidth, rh = gR.offsetHeight;
+  let cx = Math.min(Math.max(8, r.left), vw - cw - 8), cy = Math.max(8, r.top - ch - pad);
+  let rx = r.right + pad, ry = Math.max(cy + ch + pad, Math.min(r.top, vh - rh - 8));
+  if (rx + rw > vw - 8) rx = Math.max(8, r.left - rw - pad);
+  if (ry + rh > vh - 8) ry = Math.max(8, vh - rh - 8);
+  Object.assign(gC.style, { left: cx + "px", top: cy + "px" }); Object.assign(gR.style, { left: rx + "px", top: ry + "px" });
+}
+addEventListener("scroll", () => { const a = st.pin; if (a) { const el = $(`#grid .c[data-r="${a.r}"][data-c="${a.c}"]`); if (el) placePanels(el); } }, { passive: true });
+addEventListener("keydown", e => { if (e.key === "Escape" && st.pin) { st.pin = null; drawGrid(); drawLists(); } });
+addEventListener("click", e => { const d = $("#naDrawer"); if (d.open && !d.contains(e.target)) d.open = false; });
+
+/* ---------- lists ---------- */
+function item(rank, i, score, lohi, extra) {
+  const w = Math.max(2, Math.min(100, 100 * (score - lohi.lo) / (lohi.hi - lohi.lo)));
+  return `<li class="item"><span class="rkc"><span class="rk">${rank}</span>${playBtn(i)}</span><div class="cap"><p>${esc(C[i].caption)}</p><span class="meta">#${i + 1} · ${genres(i)}${spotify(i)}</span>${facts(i)}</div>
+    <div class="score"><b>${score.toFixed(3)}</b><span class="bar"><i style="width:${w}%"></i></span>${extra || ""}</div></li>`;
+}
+const chg = (d, was, rank) => `<span class="delta ${d >= 0 ? "up" : "down"}">${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(3)}</span>` +
+  (was === rank ? `<span class="moved">same rank</span>` : `<span class="moved ${was > rank ? "up" : "down"}">${was > rank ? "▲" : "▼"} was #${was}</span>`);
+function srcHtml(r, a) {
+  return `<span class="chip">${r + 1}</span>${playBtn(a) || "<span></span>"}<div><span class="label">Source caption${st.pin ? "" : " · click a cell to choose its row"}</span><p>${esc(C[a].caption)}</p><span class="meta">#${a + 1} · ${genres(a)}${spotify(a)}</span>${facts(a)}</div>`;
+}
+function drawLists() {
+  const r = Math.min(st.pin ? st.pin.r : 0, st.slots.length - 1), a = st.slots[r], { f0, f1 } = cur(), i0 = info("none"), i1 = info(st.instr);
+  $("#srcRank").innerHTML = srcHtml(r, a); $("#srcTop").innerHTML = srcHtml(r, a);
+  const I = M.instructions.find(x => x[0] === st.instr);
+  $("#ord1Lbl").textContent = st.instr === "none" ? "–" : I[1];
+  const pool = [...new Set(st.slots)].filter(b => b !== a);
+  const o0 = pool.slice().sort((x, y) => cell(f0, a, y) - cell(f0, a, x)), o1 = pool.slice().sort((x, y) => cell(f1, a, y) - cell(f1, a, x));
+  const p0 = new Map(o0.map((b, i) => [b, i + 1]));
+  $("#ord0").innerHTML = o0.map((b, i) => item(i + 1, b, cell(f0, a, b), i0)).join("");
+  $("#ord1").innerHTML = o1.map((b, i) => item(i + 1, b, cell(f1, a, b), i1, chg(cell(f1, a, b) - cell(f0, a, b), p0.get(b), i + 1))).join("");
+  $("#topHint").textContent = st.topView === "after" ? "Exact neighbours with the instruction; change and old rank against no instruction" : "Exact neighbours without an instruction";
+  if (st.topView === "before") {
+    let h = ""; for (let k = 0; k < K; k++) { const b = f0.idx[a * K + k]; h += item(k + 1, b, deq(f0.sim[a * K + k], i0.lo, i0.hi), i0); }
+    $("#top").innerHTML = h;
+  } else {
+    const row0 = new Float32Array(N); for (let c = 0; c < N; c++) row0[c] = c === a ? -Infinity : cell(f0, a, c);
+    let h = ""; for (let k = 0; k < K; k++) { const j = a * K + k, b = f1.idx[j], s1 = deq(f1.sim[j], i1.lo, i1.hi), s0 = row0[b];
+      let was = 1; for (let c = 0; c < N; c++) was += row0[c] > s0;
+      h += item(k + 1, b, s1, i1, chg(s1 - s0, was, k + 1)); }
+    $("#top").innerHTML = h;
+  }
+}
+function drawAbout() {
+  const errs = Object.values(M.files).map(f => f.cell_abs_err).filter(x => x != null), err = errs.reduce((a, b) => a + b, 0) / errs.length;
+  $("#about").innerHTML = `
+    <p><b>Data.</b> ${N.toLocaleString()} Music4All tracks, ACE-Step captions, at most 30 tracks per first genre. Every teacher embeds each caption together with the instruction and compares captions under the same instruction.</p>
+    <p><b>Teachers.</b> Qwen3-Embedding-8B with the instruction worded as a question; InBedder Llama-2-7B, whose embedding is the hidden state that would produce the answer; the same InBedder told it may answer “none”; and an LLM extraction teacher, where Qwen3.5-9B writes the answer and Qwen3-Embedding-8B embeds it.</p>
+    <p><b>Not applicable.</b> JEV-9B gives a calibrated probability that the caption answers the question. Embedder confidence is a caption's similarity to the null caption “A piece of music.” under the same instruction. AUROC in the N/A panel measures how well that confidence finds the captions JEV or the LLM call unanswerable.</p>
+    <p><b>Precision.</b> Matrix cells and the selected-caption ranking use ${DIM}-dimension compressed embeddings (mean absolute error ${err.toFixed(4)} in cosine). The top 10 lists, their scores and the colour ranges are exact; the change and old rank in the top 10 use the compressed no-instruction embeddings.</p>`;
+}
+
+/* ---------- glue ---------- */
+function drawHead() {
+  const I = M.instructions.find(x => x[0] === st.instr);
+  $("#iTitle").textContent = I[1];
+  $("#iQ").innerHTML = `<span class="kind">${KIND[I[3].split(":")[0]] || I[3]}</span>${esc(I[2])}`;
+  document.querySelectorAll("#models .pill").forEach(p => p.setAttribute("aria-pressed", p.dataset.m === st.model));
+}
+async function loadCurrent() {
+  $("#status").textContent = `Loading ${MODELS[st.model] ? MODELS[st.model][0] : st.model}…`;
+  F0 = await getFile(st.model, "none");
+  F1 = st.instr === "none" ? F0 : await getFile(st.model, st.instr);
+  const extra = [];
+  if (M.llm.includes(st.instr)) extra.push(getJson(`llm/${st.instr}.json`));
+  for (const m of ["inbedder7b", "inbedder7b_na"]) if (M.gens[m] && M.gens[m].includes(st.instr)) extra.push(getJson(`gen/${m}/${st.instr}.json`));
+  await Promise.all(extra);
+  st.thr = defaultThr();
+  $("#status").textContent = `${N.toLocaleString()} Music4All captions · ${M.instructions.length - 1} instructions · ${M.models.length} teachers`;
+}
+function refresh() { drawHead(); drawSlots(); drawNA(); drawGrid(); drawLists(); }
+async function go() { st.pin = null; await loadCurrent(); refresh(); }
+function seg(el, key, after) {
+  el.querySelectorAll("button").forEach(b => b.onclick = () => { st[key] = b.dataset.v;
+    el.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); after(); });
+}
+async function boot() {
+  try { [M, C] = await Promise.all([getJson("meta.json"), getJson("captions.json")]); if (!M || !C) throw new Error("meta.json or captions.json is missing"); }
+  catch (e) { $("#status").textContent = "Could not load data: " + e.message; return; }
+  N = M.n; K = M.k; DIM = M.dim;
+  if (M.jev_order) { try { JEV = new Uint8Array(b64(await (await fetch("bin/jev.txt")).text())); } catch { JEV = null; } }
+  AVAIL = { jev: !!JEV, anchor: Object.values(M.files).some(f => f.app), none: !!(M.gens.inbedder7b_na || []).length, llm: !!M.llm.length };
+  st.model = M.models.includes("inbedder7b") ? "inbedder7b" : M.models[0];
+  $("#models").innerHTML = M.models.map(k => { const [t, s] = MODELS[k] || [k, ""]; return `<button class="pill" data-m="${k}" aria-pressed="false"><b>${t}</b><small>${s}</small></button>`; }).join("");
+  $("#models").querySelectorAll(".pill").forEach(p => p.onclick = () => { st.model = p.dataset.m; go(); });
+  const groups = {};
+  for (const [iid, s, q, kind] of M.instructions) if (iid !== "none") (groups[KIND[kind.split(":")[0]] || kind] ||= []).push(`<option value="${iid}">${esc(s)}</option>`);
+  $("#instr").innerHTML = Object.entries(groups).map(([g, o]) => `<optgroup label="${g}">${o.join("")}</optgroup>`).join("");
+  $("#instr").value = st.instr;
+  const order = M.instructions.map(x => x[0]).filter(x => x !== "none");
+  const step = d => { st.instr = order[(order.indexOf(st.instr) + d + order.length) % order.length]; $("#instr").value = st.instr; go(); };
+  $("#instr").onchange = e => { st.instr = e.target.value; go(); };
+  $("#prevI").onclick = () => step(-1); $("#nextI").onclick = () => step(1);
+  $("#thr").oninput = e => { st.thr = +e.target.value; drawNA(); drawGrid(); drawLists(); };
+  seg($("#viewSeg"), "view", drawGrid);
+  seg($("#topSeg"), "topView", drawLists);
+  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+    st.tab = b.dataset.t; document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
+    for (const t of ["rank", "top", "about"]) $("#p-" + t).hidden = t !== st.tab; });
+  $("#npPlay").onclick = () => { if (playing !== null) play(playing); };
+  $("#npX").onclick = () => { player.pause(); playing = null; syncPlay(); };
+  $("#add").onclick = () => { st.slots.push(rand()); refresh(); };
+  $("#randAll").onclick = () => { st.slots = st.slots.map(rand); st.pin = null; refresh(); };
+  st.slots = [0, 1, 2, 3, 4, 5, 6, 7].map(k => (k * 1237 + 11) % N);
+  drawAbout();
+  await loadCurrent();
+  refresh();
+}
+boot();
+</script>
