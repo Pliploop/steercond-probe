@@ -29,7 +29,8 @@ function useAudio() {
       r.ctx = new AudioContext()
       const src = r.ctx.createMediaElementSource(r.audio)
       r.analyser = r.ctx.createAnalyser()
-      r.analyser.fftSize = 1024
+      r.analyser.fftSize = 2048
+      r.analyser.smoothingTimeConstant = 0.82
       src.connect(r.analyser).connect(r.ctx.destination)
     } catch { r.analyser = null }
   }
@@ -48,30 +49,43 @@ function useAudio() {
 }
 
 function Wave({ audio }) {
-  const cv = useRef(null)
+  // Mirrored spectrum envelope over log-spaced bands; fast attack, slow release, eases to flat on pause
+  const cv = useRef(null), playing = useRef(audio.playing)
+  playing.current = audio.playing
   useEffect(() => {
     const a = audio.analyser()
-    if (!a || !audio.playing) return
-    const ctx = cv.current.getContext('2d'), buf = new Uint8Array(a.fftSize)
+    if (!a) return
+    const ctx = cv.current.getContext('2d'), bins = new Uint8Array(a.frequencyBinCount), B = 40
+    const edges = Array.from({ length: B + 1 }, (_, k) => Math.round(2 * Math.pow(bins.length * 0.7 / 2, k / B)))
+    const env = new Float32Array(B)
     let raf
     const draw = () => {
       raf = requestAnimationFrame(draw)
-      a.getByteTimeDomainData(buf)
-      const { width: w, height: h } = cv.current
-      ctx.clearRect(0, 0, w, h)
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgb(196,36,48)'; ctx.lineJoin = 'round'
-      ctx.beginPath()
-      for (let x = 0; x < w; x++) {
-        const v = (buf[Math.floor((x / w) * buf.length)] - 128) / 128
-        const y = h / 2 + v * h * 0.46
-        x ? ctx.lineTo(x, y) : ctx.moveTo(x, y)
+      a.getByteFrequencyData(bins)
+      for (let b = 0; b < B; b++) {
+        let m = 0
+        if (playing.current) { for (let k = edges[b]; k < Math.max(edges[b] + 1, edges[b + 1]); k++) m += bins[k]; m /= Math.max(1, edges[b + 1] - edges[b]) * 255 }
+        const target = Math.pow(m, 1.4)
+        env[b] += (target - env[b]) * (target > env[b] ? 0.3 : 0.08)
       }
-      ctx.stroke()
+      const { width: w, height: h } = cv.current, mid = h / 2
+      ctx.clearRect(0, 0, w, h)
+      const y = b => Math.max(1.5, ((env[Math.max(0, b - 1)] + 2 * env[b] + env[Math.min(B - 1, b + 1)]) / 4) * (mid - 2))
+      const x = b => (b / (B - 1)) * w
+      ctx.beginPath()
+      ctx.moveTo(0, mid - y(0))
+      for (let b = 1; b < B; b++) ctx.quadraticCurveTo(x(b - 1), mid - y(b - 1), (x(b - 1) + x(b)) / 2, mid - (y(b - 1) + y(b)) / 2)
+      ctx.lineTo(w, mid - y(B - 1)); ctx.lineTo(w, mid + y(B - 1))
+      for (let b = B - 1; b > 0; b--) ctx.quadraticCurveTo(x(b), mid + y(b), (x(b) + x(b - 1)) / 2, mid + (y(b) + y(b - 1)) / 2)
+      ctx.lineTo(0, mid + y(0)); ctx.closePath()
+      const g = ctx.createLinearGradient(0, 0, w, 0)
+      g.addColorStop(0, 'rgba(196,36,48,.9)'); g.addColorStop(1, 'rgba(196,36,48,.35)')
+      ctx.fillStyle = g; ctx.fill()
     }
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
-  }, [audio.playing, audio.idx])
-  return <canvas ref={cv} width={280} height={72} className="wave" aria-hidden="true" />
+  }, [audio.idx])
+  return <canvas ref={cv} width={400} height={112} className="wave" aria-hidden="true" />
 }
 
 /* ---------- small pieces ---------- */

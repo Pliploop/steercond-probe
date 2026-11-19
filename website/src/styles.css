@@ -213,7 +213,7 @@ ol { list-style: none; margin: 0; padding: 0; }
 .np .prog i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .25s linear; }
 .np .x { color: var(--ink3); font-size: 13px; width: 28px; height: 28px; border-radius: 9px; transition: background .15s, color .15s; align-self: start; }
 .np .x:hover { background: var(--tint); color: var(--ink); }
-.wave { width: 140px; height: 36px; }
+.wave { width: 200px; height: 56px; }
 @media (max-width: 560px) { .wave { display: none; } .np { gap: 12px; } }
 
 /* instruction picker in the headline */
